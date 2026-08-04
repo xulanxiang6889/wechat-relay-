@@ -77,7 +77,7 @@ async function getCoverMediaId(n) {
 
 app.get('/', (req, res) => res.json({ ok: true, service: 'wechat-draft-relay' }));
 
-// 分片上传：客户端把 gzip+base64 后的正文按短片段逐个 GET 上传，规避 URI 长度限制
+// 分片上传：客户端把 gzip 后 hex 编码的正文按短片段逐个 GET 上传，规避 URI 长度限制
 app.get('/upload_chunk', (req, res) => {
   try {
     if (RELAY_KEY && req.header('x-relay-key') !== RELAY_KEY) {
@@ -88,7 +88,7 @@ app.get('/upload_chunk', (req, res) => {
       return res.status(400).json({ ok: false, errcode: 400, errmsg: 'key, i and data required' });
     }
     if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-    fs.writeFileSync(path.join(UPLOAD_DIR, `${key}_${i}.b64`), String(data), 'utf8');
+    fs.writeFileSync(path.join(UPLOAD_DIR, `${key}_${i}.hex`), String(data), 'utf8');
     return res.json({ ok: true, i: Number(i) });
   } catch (e) {
     return res.status(500).json({ ok: false, errcode: -1, errmsg: safeErr(e) });
@@ -106,16 +106,15 @@ app.get('/publish', async (req, res) => {
     let content;
     const { title, cover, author, digest, key, total } = req.query;
     if (key && total) {
-      // 模式A：拼接分片 -> base64 -> gunzip -> HTML
+      // 模式A：拼接分片 -> hex -> gunzip -> HTML
       let b64 = '';
       for (let k = 0; k < Number(total); k++) {
-        const p = path.join(UPLOAD_DIR, `${key}_${k}.b64`);
+        const p = path.join(UPLOAD_DIR, `${key}_${k}.hex`);
         if (!fs.existsSync(p)) return res.status(400).json({ ok: false, errcode: 400, errmsg: `missing chunk ${k}` });
         b64 += fs.readFileSync(p, 'utf8');
       }
-      // 客户端用 URL-safe base64（-/_ 代替 +/），还原为标准 base64 再解压
-      b64 = b64.replace(/-/g, '+').replace(/_/g, '/');
-      content = zlib.gunzipSync(Buffer.from(b64, 'base64')).toString('utf8');
+      // 客户端用 hex（0-9a-f）编码，URL 中无特殊字符，网关无法破坏；直接按 hex 解码
+      content = zlib.gunzipSync(Buffer.from(b64, 'hex')).toString('utf8');
     } else {
       // 模式B：明文 content（短内容）
       content = req.query.content || '';
