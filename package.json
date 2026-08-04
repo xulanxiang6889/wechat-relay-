@@ -1,0 +1,15 @@
+{
+  "name": "wechat-draft-relay",
+  "version": "1.0.0",
+  "description": "微信公众号草稿箱 relay，部署在微信云托管开放接口服务（云调用），免 IP 白名单、免 AppSecret",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1",
+    "axios": "^1.7.2",
+    "form-data": "^4.0.0"
+  }
+}
