@@ -59,6 +59,22 @@ function wxAddDraft(article) {
   });
 }
 
+// 列出草稿箱（分页，用于定位待删草稿的 media_id）
+function wxListDraft(offset, count) {
+  return axios.post(`${WX_API}/cgi-bin/draft/batchget`, { offset: offset || 0, count: count || 20, no_content: 0 }, {
+    headers: { 'Content-Type': 'application/json' },
+    timeout: 30000,
+  });
+}
+
+// 删除指定草稿
+function wxDeleteDraft(mediaId) {
+  return axios.post(`${WX_API}/cgi-bin/draft/delete`, { media_id: mediaId }, {
+    headers: { 'Content-Type': 'application/json' },
+    timeout: 30000,
+  });
+}
+
 // 懒加载：首次用到 cover-N 时上传包内 cover-N.jpg，缓存 media_id
 async function getCoverMediaId(n) {
   if (coverCache[n]) return coverCache[n];
@@ -135,6 +151,48 @@ app.get('/publish', async (req, res) => {
       return res.json({ ok: true, media_id: dr.data.media_id });
     }
     return res.status(502).json({ ok: false, step: 'draft', errcode: dr.data && dr.data.errcode, errmsg: dr.data && dr.data.errmsg });
+  } catch (e) {
+    return res.status(502).json({ ok: false, step: 'exception', errcode: -1, errmsg: safeErr(e) });
+  }
+});
+
+// 列出草稿箱：返回 {media_id, title} 列表，供客户端按标题定位待删草稿
+app.get('/list', async (req, res) => {
+  try {
+    if (RELAY_KEY && req.header('x-relay-key') !== RELAY_KEY) {
+      return res.status(401).json({ ok: false, errcode: 401, errmsg: 'unauthorized' });
+    }
+    const all = [];
+    let offset = 0;
+    const count = 20;
+    while (true) {
+      const r = await wxListDraft(offset, count);
+      if (!r.data || r.data.errcode) {
+        return res.status(502).json({ ok: false, step: 'list', errcode: r.data && r.data.errcode, errmsg: r.data && r.data.errmsg });
+      }
+      const items = r.data.item || [];
+      for (const it of items) all.push({ media_id: it.media_id, title: it.content ? it.content.title : '' });
+      const total = r.data.total_count || 0;
+      if (items.length === 0 || all.length >= total || all.length >= 100) break;
+      offset += count;
+    }
+    return res.json({ ok: true, total: all.length, drafts: all });
+  } catch (e) {
+    return res.status(502).json({ ok: false, step: 'exception', errcode: -1, errmsg: safeErr(e) });
+  }
+});
+
+// 删除指定草稿：?media_id=...
+app.get('/delete', async (req, res) => {
+  try {
+    if (RELAY_KEY && req.header('x-relay-key') !== RELAY_KEY) {
+      return res.status(401).json({ ok: false, errcode: 401, errmsg: 'unauthorized' });
+    }
+    const { media_id } = req.query;
+    if (!media_id) return res.status(400).json({ ok: false, errcode: 400, errmsg: 'media_id required' });
+    const r = await wxDeleteDraft(media_id);
+    if (r.data && r.data.errcode === 0) return res.json({ ok: true, media_id });
+    return res.status(502).json({ ok: false, step: 'delete', errcode: r.data && r.data.errcode, errmsg: r.data && r.data.errmsg });
   } catch (e) {
     return res.status(502).json({ ok: false, step: 'exception', errcode: -1, errmsg: safeErr(e) });
   }
