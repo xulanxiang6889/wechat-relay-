@@ -171,7 +171,10 @@ app.get('/list', async (req, res) => {
         return res.status(502).json({ ok: false, step: 'list', errcode: r.data && r.data.errcode, errmsg: r.data && r.data.errmsg });
       }
       const items = r.data.item || [];
-      for (const it of items) all.push({ media_id: it.media_id, title: it.content ? it.content.title : '' });
+      for (const it of items) {
+        const ni = it.content && it.content.news_item ? it.content.news_item[0] : null;
+        all.push({ media_id: it.media_id, title: ni ? (ni.title || '') : '' });
+      }
       const total = r.data.total_count || 0;
       if (items.length === 0 || all.length >= total || all.length >= 100) break;
       offset += count;
