@@ -142,7 +142,30 @@ app.get('/publish', async (req, res) => {
     if (!n || +n < 1 || +n > 10) {
       return res.status(400).json({ ok: false, errcode: 400, errmsg: 'cover must be 1-10' });
     }
-    const thumb_media_id = await getCoverMediaId(n);
+    // 优先用客户端上传的本地真实封面（cover_key 指向本地封面的 hex 分片集合），
+    // 否则回退包内固化的 cover-N.jpg（旧品类图）。
+    let thumb_media_id = null;
+    const coverKey = req.query.cover_key;
+    if (coverKey) {
+      try {
+        let chex = '';
+        let k = 0;
+        while (true) {
+          const cp = path.join(UPLOAD_DIR, `${coverKey}_${k}.hex`);
+          if (!fs.existsSync(cp)) break;
+          chex += fs.readFileSync(cp, 'utf8');
+          k++;
+        }
+        if (chex) {
+          const tmp = path.join('/tmp', `lc_${Date.now()}_${Math.floor(Math.random() * 1e6)}.jpg`);
+          fs.writeFileSync(tmp, Buffer.from(chex, 'hex'));
+          const up = await wxUploadImage(tmp);
+          if (up.data && up.data.media_id) thumb_media_id = up.data.media_id;
+          try { fs.unlinkSync(tmp); } catch (_) {}
+        }
+      } catch (e) { thumb_media_id = null; }
+    }
+    if (!thumb_media_id) thumb_media_id = await getCoverMediaId(n);
     const dr = await wxAddDraft({
       title, author: author || '友友3321', digest: digest || '', content,
       thumb_media_id, show_cover_pic: 1, need_open_comment: 1, only_fans_can_comment: 0,
